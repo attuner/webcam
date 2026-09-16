@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>P2P Live Webcam Broadcast</title>
-  <!-- Tailwind CSS -->
+  <title>P2P Live Webcam Broadcast & Diagnostics</title>
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
@@ -16,7 +16,7 @@
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-between p-4 selection:bg-indigo-500 selection:text-white">
 
-  <!-- Top Navigation -->
+  <!-- Header -->
   <header class="w-full max-w-5xl flex flex-wrap items-center justify-between py-4 border-b border-slate-800 gap-4">
     <div class="flex items-center space-x-3">
       <div id="liveDot" class="h-3 w-3 bg-slate-600 rounded-full"></div>
@@ -36,11 +36,20 @@
     </div>
   </header>
 
+  <!-- Diagnostic Alert Banner -->
+  <div id="diagBanner" class="w-full max-w-5xl mt-3 hidden rounded-xl p-3 text-xs flex items-center justify-between border">
+    <div class="flex items-center gap-2">
+      <i id="diagIcon" class="fa-solid"></i>
+      <span id="diagText">Checking camera and connection status...</span>
+    </div>
+    <button id="retryDiagBtn" class="underline hover:text-white ml-2 text-xs font-mono">Re-check</button>
+  </div>
+
   <!-- Video Viewport -->
   <main class="w-full max-w-5xl my-auto flex flex-col items-center">
     <div class="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center group">
       
-      <!-- Video Element (used by both broadcaster and viewer) -->
+      <!-- Video Element -->
       <video id="videoDisplay" autoplay playsinline class="w-full h-full object-cover transition duration-300"></video>
       <canvas id="hiddenCanvas" class="hidden"></canvas>
 
@@ -58,6 +67,9 @@
         <button id="flipBtn" title="Flip Mirror" class="hidden bg-black/60 hover:bg-black/80 backdrop-blur-md p-2 rounded-full border border-white/20 text-white transition">
           <i class="fa-solid fa-arrows-left-right text-sm"></i>
         </button>
+        <button id="unmuteBtn" title="Click to Unmute" class="hidden bg-red-600 hover:bg-red-500 backdrop-blur-md px-3 py-1 rounded-full border border-white/20 text-white text-xs font-semibold flex items-center gap-1 transition">
+          <i class="fa-solid fa-volume-high"></i> Click to Unmute
+        </button>
       </div>
 
       <!-- Stream Status Overlay -->
@@ -66,13 +78,13 @@
       </div>
     </div>
 
-    <!-- Interactive Dashboard / Action Panel -->
+    <!-- Action & Config Panel -->
     <div class="w-full mt-4 bg-slate-900/80 backdrop-blur-md border border-slate-800 p-5 rounded-2xl shadow-lg">
       
-      <!-- Choose Mode Tabs -->
+      <!-- Selection Modes -->
       <div id="modeSelector" class="grid grid-cols-1 md:grid-cols-2 gap-4">
         
-        <!-- Option A: Host a Webcam -->
+        <!-- Option A: Broadcaster -->
         <div class="p-5 bg-slate-800/50 border border-slate-700/60 rounded-xl flex flex-col justify-between">
           <div>
             <h3 class="font-semibold text-white flex items-center gap-2">
@@ -85,7 +97,7 @@
           </button>
         </div>
 
-        <!-- Option B: View an Existing Webcam -->
+        <!-- Option B: Viewer -->
         <div class="p-5 bg-slate-800/50 border border-slate-700/60 rounded-xl flex flex-col justify-between">
           <div>
             <h3 class="font-semibold text-white flex items-center gap-2">
@@ -103,7 +115,7 @@
 
       </div>
 
-      <!-- Live Broadcast Information Card (Visible only while hosting) -->
+      <!-- Live Broadcasting Card -->
       <div id="hostActiveBox" class="hidden">
         <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 bg-indigo-950/40 border border-indigo-800/60 rounded-xl">
           <div class="space-y-1">
@@ -125,7 +137,7 @@
     </div>
   </main>
 
-  <!-- Toast Alert -->
+  <!-- Toast Notification -->
   <div id="toast" class="fixed bottom-6 right-6 bg-slate-800 border border-slate-700 text-white px-4 py-3 rounded-xl shadow-2xl transition-all duration-300 transform translate-y-20 opacity-0 flex items-center space-x-2 z-50">
     <i id="toastIcon" class="fa-solid fa-circle-check text-green-400"></i>
     <span id="toastMsg" class="text-sm">Notification</span>
@@ -138,6 +150,7 @@
     const roleBadge = document.getElementById('roleBadge');
     const flipBtn = document.getElementById('flipBtn');
     const snapBtn = document.getElementById('snapBtn');
+    const unmuteBtn = document.getElementById('unmuteBtn');
     const hiddenCanvas = document.getElementById('hiddenCanvas');
     const streamInfoOverlay = document.getElementById('streamInfoOverlay');
     const statusLabel = document.getElementById('statusLabel');
@@ -152,13 +165,29 @@
     const connectionCount = document.getElementById('connectionCount');
     const viewerNum = document.getElementById('viewerNum');
 
+    // Diagnostics UI
+    const diagBanner = document.getElementById('diagBanner');
+    const diagIcon = document.getElementById('diagIcon');
+    const diagText = document.getElementById('diagText');
+    const retryDiagBtn = document.getElementById('retryDiagBtn');
+
     let peer = null;
     let localStream = null;
     let activeCall = null;
     let connectedViewers = new Set();
     let isMirrored = false;
 
-    // Toast Notification helper
+    // Google STUN configuration to bypass router/firewall NAT issues
+    const peerConfig = {
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+      }
+    };
+
     function showToast(message, isError = false) {
       const toast = document.getElementById('toast');
       const toastMsg = document.getElementById('toastMsg');
@@ -170,21 +199,77 @@
 
       setTimeout(() => {
         toast.classList.add('opacity-0', 'translate-y-20');
-      }, 3500);
+      }, 4000);
     }
 
-    // --- 1. BROADCASTER / HOST LOGIC ---
+    // --- 1. HARDWARE & PERMISSION DIAGNOSTICS ---
+    async function checkWebcamHealth() {
+      // 1. HTTPS Check (Browsers block getUserMedia on plain HTTP)
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        renderDiag(false, "HTTPS Required: Webcams can only be accessed over secure HTTPS connections. Deploy to GitHub Pages or use HTTPS.");
+        return false;
+      }
+
+      // 2. Browser API support
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        renderDiag(false, "Unsupported Browser: Your browser does not support standard WebRTC camera APIs.");
+        return false;
+      }
+
+      // 3. Hardware existence check
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoInputs = devices.filter(d => d.kind === 'videoinput');
+
+        if (videoInputs.length === 0) {
+          renderDiag(false, "No webcam hardware detected. Please plug in a USB camera or check your device drivers.");
+          return false;
+        }
+
+        renderDiag(true, `Hardware detected: ${videoInputs.length} camera(s) available.`);
+        return true;
+      } catch (err) {
+        renderDiag(false, `Device enumeration error: ${err.message}`);
+        return false;
+      }
+    }
+
+    function renderDiag(isOk, text) {
+      diagBanner.classList.remove('hidden');
+      if (isOk) {
+        diagBanner.className = "w-full max-w-5xl mt-3 rounded-xl p-3 text-xs flex items-center justify-between border bg-emerald-950/40 border-emerald-800/80 text-emerald-300";
+        diagIcon.className = "fa-solid fa-circle-check text-emerald-400";
+      } else {
+        diagBanner.className = "w-full max-w-5xl mt-3 rounded-xl p-3 text-xs flex items-center justify-between border bg-red-950/50 border-red-800/80 text-red-300";
+        diagIcon.className = "fa-solid fa-triangle-exclamation text-red-400";
+      }
+      diagText.textContent = text;
+    }
+
+    retryDiagBtn.addEventListener('click', checkWebcamHealth);
+
+    // --- 2. BROADCASTER / HOST LOGIC ---
     startHostBtn.addEventListener('click', async () => {
       try {
-        // Request video and audio
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "user" },
-          audio: true
-        });
+        // Attempt getting both video and audio first
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "user" },
+            audio: true
+          });
+        } catch (audioErr) {
+          // Fallback: Attempt video-only if audio device is unavailable or blocked
+          console.warn("Audio failed or unavailable, falling back to video-only:", audioErr);
+          localStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "user" },
+            audio: false
+          });
+          showToast("Broadcasting without microphone (Video only).");
+        }
 
-        // Set local playback
+        // Configure local UI
         video.srcObject = localStream;
-        video.muted = true; // Broadcaster mutes self to avoid feedback
+        video.muted = true; // Broadcaster must stay muted locally to avoid feedback echo
         isMirrored = true;
         video.classList.add('mirror');
         flipBtn.classList.remove('hidden');
@@ -192,8 +277,8 @@
         idleScreen.classList.add('hidden');
         streamInfoOverlay.classList.remove('hidden');
 
-        // Connect to serverless PeerJS Cloud Relay
-        peer = new Peer();
+        // Connect to PeerJS with STUN ICE servers
+        peer = new Peer(peerConfig);
 
         peer.on('open', (id) => {
           roleBadge.textContent = "Host";
@@ -205,12 +290,11 @@
           modeSelector.classList.add('hidden');
           hostActiveBox.classList.remove('hidden');
           roomIdDisplay.textContent = id;
-          showToast("Broadcaster ready. Share your room ID!");
+          showToast("Live stream initialized. Share your link!");
         });
 
-        // Answer incoming calls from viewers
+        // Answer incoming viewers
         peer.on('call', (call) => {
-          // Send local stream to viewer
           call.answer(localStream);
           connectedViewers.add(call.peer);
           viewerNum.textContent = connectedViewers.size;
@@ -222,15 +306,23 @@
         });
 
         peer.on('error', (err) => {
-          showToast(err.message, true);
+          showToast(`Peer connection error: ${err.type}`, true);
         });
 
       } catch (err) {
-        showToast("Camera access failed: " + err.message, true);
+        // Detailed error diagnosis
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          showToast("Permission Denied: Allow camera access in your browser settings.", true);
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          showToast("Webcam in use: Close other apps (Zoom, Teams, OBS) using this camera.", true);
+        } else if (err.name === 'NotFoundError') {
+          showToast("No camera detected on your system.", true);
+        } else {
+          showToast(`Camera error: ${err.message}`, true);
+        }
       }
     });
 
-    // Copy Shareable URL
     copyLinkBtn.addEventListener('click', () => {
       const id = roomIdDisplay.textContent;
       const shareUrl = `${window.location.origin}${window.location.pathname}?room=${id}`;
@@ -239,19 +331,18 @@
       });
     });
 
-    // Stop Broadcaster
     stopHostBtn.addEventListener('click', () => {
       if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
       }
       if (peer) peer.destroy();
-      location.href = window.location.pathname; // Hard reset to idle
+      location.href = window.location.pathname;
     });
 
-    // --- 2. VIEWER LOGIC ---
+    // --- 3. VIEWER LOGIC ---
     function joinRoom(hostId) {
       if (!hostId) {
-        showToast("Please enter a valid Room ID", true);
+        showToast("Please provide a valid Room ID.", true);
         return;
       }
 
@@ -261,33 +352,36 @@
       streamInfoOverlay.classList.remove('hidden');
       modeSelector.classList.add('hidden');
 
-      peer = new Peer();
+      peer = new Peer(peerConfig);
 
       peer.on('open', () => {
-        // Call the host with an empty stream
-        const emptyStream = new MediaStream();
-        activeCall = peer.call(hostId, emptyStream);
+        const dummyStream = new MediaStream();
+        activeCall = peer.call(hostId, dummyStream);
 
         activeCall.on('stream', (remoteStream) => {
           video.srcObject = remoteStream;
-          video.muted = false; // Allow viewer to hear host audio
           video.classList.remove('mirror');
           idleScreen.classList.add('hidden');
           snapBtn.classList.remove('hidden');
           liveDot.className = "h-3 w-3 bg-green-500 rounded-full animate-pulse";
           statusLabel.textContent = "Connected & Streaming";
           showToast("Live stream connected!");
+
+          // Handle browser unmuted autoplay restrictions
+          video.play().catch(() => {
+            unmuteBtn.classList.remove('hidden');
+          });
         });
 
         activeCall.on('close', () => {
-          showToast("Host disconnected the stream", true);
-          setTimeout(() => location.reload(), 2000);
+          showToast("Host ended the stream.", true);
+          setTimeout(() => location.reload(), 2500);
         });
       });
 
       peer.on('error', (err) => {
-        showToast("Connection failed: " + err.message, true);
-        statusLabel.textContent = "Connection Error";
+        showToast(`Viewer connection error: ${err.message}`, true);
+        statusLabel.textContent = "Connection Failed";
       });
     }
 
@@ -295,14 +389,18 @@
       joinRoom(joinRoomInput.value.trim());
     });
 
-    // --- 3. UTILITIES & TOOLS ---
-    // Flip/Mirror Video
+    unmuteBtn.addEventListener('click', () => {
+      video.muted = false;
+      video.play();
+      unmuteBtn.classList.add('hidden');
+    });
+
+    // --- 4. UTILITIES ---
     flipBtn.addEventListener('click', () => {
       isMirrored = !isMirrored;
       video.classList.toggle('mirror', isMirrored);
     });
 
-    // Download Snapshot Locally
     snapBtn.addEventListener('click', () => {
       if (!video.videoWidth) return;
 
@@ -319,14 +417,16 @@
       const dataUrl = hiddenCanvas.toDataURL('image/jpeg', 0.95);
 
       const link = document.createElement('a');
-      link.download = `live-snapshot-${Date.now()}.jpg`;
+      link.download = `webcam-snapshot-${Date.now()}.jpg`;
       link.href = dataUrl;
       link.click();
-      showToast("Snapshot saved!");
+      showToast("Snapshot downloaded!");
     });
 
-    // Auto-detect Room ID from URL (e.g., ?room=abc-123)
-    window.addEventListener('DOMContentLoaded', () => {
+    // Run diagnostics and auto-detect room query on boot
+    window.addEventListener('DOMContentLoaded', async () => {
+      await checkWebcamHealth();
+
       const urlParams = new URLSearchParams(window.location.search);
       const roomParam = urlParams.get('room');
       if (roomParam) {

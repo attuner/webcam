@@ -3,102 +3,96 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cross-Network Live Webcam</title>
+  <title>Google Sheets Live Webcam Relay</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     .mirror { transform: scaleX(-1); }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-between p-4 selection:bg-indigo-500 selection:text-white">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-between p-4 selection:bg-emerald-500 selection:text-white">
 
   <!-- Header -->
   <header class="w-full max-w-4xl flex items-center justify-between py-4 border-b border-slate-800">
     <div class="flex items-center space-x-3">
       <div id="statusDot" class="h-3 w-3 bg-slate-600 rounded-full"></div>
-      <h1 class="text-xl font-bold tracking-tight">CrossNet <span class="text-xs font-mono text-indigo-400">P2P RELAY</span></h1>
+      <h1 class="text-xl font-bold tracking-tight">SheetsCam <span class="text-xs font-mono text-emerald-400">GSHEET BACKEND</span></h1>
     </div>
     <span id="roleBadge" class="text-xs font-mono uppercase bg-slate-800 border border-slate-700 px-2.5 py-1 rounded text-slate-400">Idle</span>
   </header>
 
-  <!-- Video Viewport -->
+  <!-- Viewport -->
   <main class="w-full max-w-4xl my-auto flex flex-col items-center">
     <div class="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center">
       
-      <video id="videoDisplay" autoplay playsinline class="w-full h-full object-cover"></video>
-      <canvas id="hiddenCanvas" class="hidden"></canvas>
+      <!-- Video Element (used on Broadcaster) -->
+      <video id="webcam" autoplay playsinline class="w-full h-full object-cover hidden mirror"></video>
+      <!-- Image Element (used on Viewer) -->
+      <img id="remoteDisplay" class="w-full h-full object-cover hidden" alt="Live Feed" />
+      <!-- Offscreen Canvas for downsampling & frame extraction -->
+      <canvas id="frameCanvas" class="hidden"></canvas>
 
-      <!-- Idle Placeholder -->
-      <div id="idleScreen" class="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-slate-950/90 backdrop-blur-sm z-10">
-        <i class="fa-solid fa-satellite-dish text-4xl text-indigo-400 mb-3"></i>
-        <h2 class="text-lg font-bold text-slate-200">Cross-Network Streaming</h2>
-        <p class="text-xs text-slate-400 max-w-sm mt-1">Direct TURN relay enabled for mobile-to-Wi-Fi and cellular connections.</p>
+      <!-- Idle Screen -->
+      <div id="idleScreen" class="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-slate-950/95 backdrop-blur-sm z-10">
+        <i class="fa-solid fa-table text-4xl text-emerald-400 mb-3"></i>
+        <h2 class="text-lg font-bold text-slate-200">Google Sheet Webcam Relay</h2>
+        <p class="text-xs text-slate-400 max-w-sm mt-1">Reliable video stream across different networks via Google Sheets cloud database.</p>
       </div>
 
-      <!-- Controls & Status Overlays -->
-      <div id="overlayBar" class="hidden absolute top-3 right-3 flex gap-2 z-20">
-        <button id="unmuteBtn" class="hidden bg-emerald-600 hover:bg-emerald-500 px-3 py-1 rounded-full text-xs font-semibold shadow">
-          <i class="fa-solid fa-volume-high"></i> Play Audio
-        </button>
-      </div>
-
-      <div id="statusOverlay" class="hidden absolute bottom-3 left-3 text-xs font-mono bg-black/70 px-3 py-1.5 rounded-lg border border-white/10 z-20">
-        Status: <span id="statusLabel" class="text-yellow-400 font-semibold">Connecting...</span>
+      <!-- Live Stream Overlay -->
+      <div id="streamOverlay" class="hidden absolute bottom-3 left-3 text-xs font-mono bg-black/70 px-3 py-1.5 rounded-lg border border-white/10 z-20">
+        Status: <span id="statusText" class="text-yellow-400 font-semibold">Idle</span> | FPS: <span id="fpsCounter" class="text-emerald-400">--</span>
       </div>
     </div>
 
-    <!-- Controls Container -->
-    <div class="w-full mt-4 bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+    <!-- Backend URL Setup & Control Box -->
+    <div class="w-full mt-4 bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
       
-      <!-- Selection Buttons -->
-      <div id="setupGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        
-        <!-- Host -->
-        <div class="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl flex flex-col justify-between">
+      <!-- Google Apps Script URL Input -->
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 mb-1">Google Apps Script Web App URL:</label>
+        <div class="flex gap-2">
+          <input id="scriptUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec" 
+                 class="w-full bg-slate-950 border border-slate-700 px-3 py-2 rounded-lg text-xs font-mono text-white outline-none focus:border-emerald-500" />
+          <button id="btnSaveUrl" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs px-3 rounded-lg font-medium transition">
+            Save
+          </button>
+        </div>
+      </div>
+
+      <!-- Device Actions -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+        <!-- Device 1: Host -->
+        <div class="p-4 bg-slate-800/40 border border-slate-700/60 rounded-xl flex flex-col justify-between">
           <div>
-            <h2 class="font-semibold text-white flex items-center gap-2">
-              <i class="fa-solid fa-video text-indigo-400"></i> Broadcast (Device 1)
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">Stream camera feed to any device outside this network.</p>
+            <h3 class="font-semibold text-white text-sm flex items-center gap-2">
+              <i class="fa-solid fa-camera text-indigo-400"></i> Device 1: Broadcast
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">Captures camera frames and saves them to Google Sheets.</p>
           </div>
-          <button id="btnStartHost" class="mt-4 bg-indigo-600 hover:bg-indigo-500 text-sm font-medium py-2.5 rounded-lg transition shadow-lg shadow-indigo-600/30">
+          <button id="btnStartBroadcasting" class="mt-4 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold py-2.5 rounded-lg transition shadow-lg shadow-indigo-600/30">
             Start Broadcasting
           </button>
         </div>
 
-        <!-- Viewer -->
-        <div class="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl flex flex-col justify-between">
+        <!-- Device 2: Viewer -->
+        <div class="p-4 bg-slate-800/40 border border-slate-700/60 rounded-xl flex flex-col justify-between">
           <div>
-            <h2 class="font-semibold text-white flex items-center gap-2">
-              <i class="fa-solid fa-eye text-emerald-400"></i> Watch (Device 2)
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">Join using the Room ID provided by Device 1.</p>
+            <h3 class="font-semibold text-white text-sm flex items-center gap-2">
+              <i class="fa-solid fa-display text-emerald-400"></i> Device 2: Watch
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">Fetches frames directly from the Google Sheet.</p>
           </div>
-          <div class="mt-4 flex gap-2">
-            <input id="inputRoomId" type="text" placeholder="Enter Host Room ID..." class="w-full bg-slate-950 border border-slate-700 px-3 py-2 rounded-lg text-xs font-mono outline-none focus:border-emerald-500" />
-            <button id="btnJoinViewer" class="bg-emerald-600 hover:bg-emerald-500 text-sm font-medium px-4 rounded-lg transition shadow-lg shadow-emerald-600/30">
-              Join
-            </button>
-          </div>
+          <button id="btnStartWatching" class="mt-4 bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold py-2.5 rounded-lg transition shadow-lg shadow-emerald-600/30">
+            Watch Live Feed
+          </button>
         </div>
-
       </div>
 
-      <!-- Host Active Card -->
-      <div id="hostActivePanel" class="hidden p-4 bg-indigo-950/40 border border-indigo-800/70 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div class="text-xs font-mono text-indigo-300 font-bold uppercase">Live Broadcast Active</div>
-          <div class="text-xs text-slate-300 mt-0.5">Share this link to view from any network:</div>
-          <div class="flex items-center gap-2 mt-2">
-            <span id="displayRoomId" class="bg-slate-950 text-indigo-400 border border-indigo-900 px-3 py-1.5 rounded-lg font-mono text-sm font-semibold">---</span>
-            <button id="btnCopyLink" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1">
-              <i class="fa-solid fa-copy"></i> Copy Link
-            </button>
-          </div>
-        </div>
-        <button id="btnStopHost" class="bg-red-600 hover:bg-red-500 text-xs px-4 py-2 rounded-lg font-medium transition">
-          End Stream
+      <!-- Stop Button -->
+      <div id="stopControl" class="hidden pt-2 border-t border-slate-800">
+        <button id="btnStop" class="w-full bg-red-600/80 hover:bg-red-600 text-xs py-2.5 rounded-lg font-semibold transition">
+          Stop Stream
         </button>
       </div>
 
@@ -106,194 +100,162 @@
   </main>
 
   <script>
-    const video = document.getElementById('videoDisplay');
+    const webcam = document.getElementById('webcam');
+    const remoteDisplay = document.getElementById('remoteDisplay');
+    const frameCanvas = document.getElementById('frameCanvas');
     const idleScreen = document.getElementById('idleScreen');
     const statusDot = document.getElementById('statusDot');
     const roleBadge = document.getElementById('roleBadge');
-    const statusOverlay = document.getElementById('statusOverlay');
-    const statusLabel = document.getElementById('statusLabel');
-    const overlayBar = document.getElementById('overlayBar');
-    const unmuteBtn = document.getElementById('unmuteBtn');
-    const setupGrid = document.getElementById('setupGrid');
-    const hostActivePanel = document.getElementById('hostActivePanel');
-    const displayRoomId = document.getElementById('displayRoomId');
-    const btnStartHost = document.getElementById('btnStartHost');
-    const btnStopHost = document.getElementById('btnStopHost');
-    const btnCopyLink = document.getElementById('btnCopyLink');
-    const inputRoomId = document.getElementById('inputRoomId');
-    const btnJoinViewer = document.getElementById('btnJoinViewer');
+    const streamOverlay = document.getElementById('streamOverlay');
+    const statusText = document.getElementById('statusText');
+    const fpsCounter = document.getElementById('fpsCounter');
+    const scriptUrlInput = document.getElementById('scriptUrl');
+    const btnSaveUrl = document.getElementById('btnSaveUrl');
+    const btnStartBroadcasting = document.getElementById('btnStartBroadcasting');
+    const btnStartWatching = document.getElementById('btnStartWatching');
+    const btnStop = document.getElementById('btnStop');
+    const stopControl = document.getElementById('stopControl');
 
-    let peer = null;
-    let localStream = null;
+    let streamInterval = null;
+    let localMediaStream = null;
+    let frameCount = 0;
+    let lastFpsTime = Date.now();
+    let isBroadcastingBusy = false;
 
-    // Standard WebRTC Configuration with OpenRelay TURN servers for NAT traversal
-    const rtcConfiguration = {
-      debug: 1,
-      config: {
-        iceServers: [
-          // STUN Servers
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          // Free Public TURN Relay from OpenRelay (Metered)
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          }
-        ]
+    // Load saved script URL
+    const savedUrl = localStorage.getItem('gsheet_backend_url') || '';
+    scriptUrlInput.value = savedUrl;
+
+    btnSaveUrl.addEventListener('click', () => {
+      localStorage.setItem('gsheet_backend_url', scriptUrlInput.value.trim());
+      alert('Google Apps Script URL saved!');
+    });
+
+    function getBackendUrl() {
+      const url = scriptUrlInput.value.trim();
+      if (!url) {
+        alert('Please enter your Google Apps Script Web App URL first!');
+        return null;
       }
-    };
-
-    // --- 1. BROADCASTER LOGIC (Device 1) ---
-    btnStartHost.addEventListener('click', async () => {
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-          audio: true
-        }).catch(async () => {
-          // Video-only fallback if mic is blocked or missing
-          return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        });
-
-        video.srcObject = localStream;
-        video.muted = true; // Host mutes locally
-        video.classList.add('mirror');
-        idleScreen.classList.add('hidden');
-        statusOverlay.classList.remove('hidden');
-
-        peer = new Peer(rtcConfiguration);
-
-        peer.on('open', (id) => {
-          roleBadge.textContent = "Host";
-          roleBadge.className = "text-xs font-mono uppercase bg-indigo-900 border border-indigo-700 px-2.5 py-1 rounded text-indigo-300";
-          statusDot.className = "h-3 w-3 bg-red-500 rounded-full animate-ping";
-          statusLabel.textContent = "Broadcasting (Awaiting Viewers)";
-          statusLabel.className = "text-green-400 font-semibold";
-
-          setupGrid.classList.add('hidden');
-          hostActivePanel.classList.remove('hidden');
-          displayRoomId.textContent = id;
-        });
-
-        // Answer incoming data connections from viewers
-        peer.on('connection', (conn) => {
-          conn.on('data', (data) => {
-            if (data === 'request-stream') {
-              // Call the viewer directly with the real media tracks
-              peer.call(conn.peer, localStream);
-              statusLabel.textContent = "Streaming to Viewer";
-            }
-          });
-        });
-
-        peer.on('error', (err) => console.error("PeerJS Host Error:", err));
-
-      } catch (err) {
-        alert("Camera error: " + err.message);
-      }
-    });
-
-    btnCopyLink.addEventListener('click', () => {
-      const url = `${window.location.origin}${window.location.pathname}?room=${displayRoomId.textContent}`;
-      navigator.clipboard.writeText(url).then(() => alert("Link copied! Open on Device 2."));
-    });
-
-    btnStopHost.addEventListener('click', () => {
-      if (localStream) localStream.getTracks().forEach(t => t.stop());
-      if (peer) peer.destroy();
-      location.href = window.location.pathname;
-    });
-
-    // --- 2. VIEWER LOGIC (Device 2) ---
-    function connectViewer(hostId) {
-      if (!hostId) return;
-
-      roleBadge.textContent = "Viewer";
-      roleBadge.className = "text-xs font-mono uppercase bg-emerald-950 border border-emerald-700 px-2.5 py-1 rounded text-emerald-300";
-      statusOverlay.classList.remove('hidden');
-      statusLabel.textContent = "Negotiating Relay (TURN)...";
-      statusLabel.className = "text-yellow-400 font-semibold";
-      setupGrid.classList.add('hidden');
-
-      peer = new Peer(rtcConfiguration);
-
-      peer.on('open', () => {
-        statusLabel.textContent = "Connecting to Host...";
-
-        // Step 1: Establish DataChannel to trigger the host
-        const conn = peer.connect(hostId, { reliable: true });
-
-        conn.on('open', () => {
-          statusLabel.textContent = "Requesting Stream...";
-          conn.send('request-stream');
-        });
-
-        conn.on('error', (err) => {
-          statusLabel.textContent = "Failed to connect to host ID.";
-          statusLabel.className = "text-red-400 font-semibold";
-        });
-
-        // Step 2: Answer incoming media call with tracks
-        peer.on('call', (incomingCall) => {
-          incomingCall.answer(); // Viewer sends no tracks
-
-          incomingCall.on('stream', (remoteStream) => {
-            video.srcObject = remoteStream;
-            idleScreen.classList.add('hidden');
-            overlayBar.classList.remove('hidden');
-            statusDot.className = "h-3 w-3 bg-green-500 rounded-full animate-pulse";
-            statusLabel.textContent = "Live Connected";
-            statusLabel.className = "text-green-400 font-semibold";
-
-            video.play().catch(() => {
-              // Unmute prompt for browser autoplay policy
-              video.muted = true;
-              video.play();
-              unmuteBtn.classList.remove('hidden');
-            });
-          });
-
-          incomingCall.on('close', () => {
-            statusLabel.textContent = "Host ended stream.";
-            statusLabel.className = "text-red-400 font-semibold";
-          });
-        });
-      });
-
-      peer.on('error', (err) => {
-        statusLabel.textContent = "Error: " + err.type;
-        statusLabel.className = "text-red-400 font-semibold";
-      });
+      return url;
     }
 
-    btnJoinViewer.addEventListener('click', () => {
-      connectViewer(inputRoomId.value.trim());
-    });
+    // --- BROADCASTER (Device 1) ---
+    btnStartBroadcasting.addEventListener('click', async () => {
+      const url = getBackendUrl();
+      if (!url) return;
 
-    unmuteBtn.addEventListener('click', () => {
-      video.muted = false;
-      video.play();
-      unmuteBtn.classList.add('hidden');
-    });
+      try {
+        localMediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+          audio: false
+        });
 
-    // Auto-detect Room ID from URL
-    window.addEventListener('DOMContentLoaded', () => {
-      const room = new URLSearchParams(window.location.search).get('room');
-      if (room) {
-        inputRoomId.value = room;
-        connectViewer(room);
+        webcam.srcObject = localMediaStream;
+        webcam.classList.remove('hidden');
+        remoteDisplay.classList.add('hidden');
+        idleScreen.classList.add('hidden');
+        streamOverlay.classList.remove('hidden');
+        stopControl.classList.remove('hidden');
+
+        roleBadge.textContent = 'Broadcaster';
+        roleBadge.className = 'text-xs font-mono uppercase bg-indigo-950 border border-indigo-700 px-2.5 py-1 rounded text-indigo-300';
+        statusDot.className = 'h-3 w-3 bg-red-500 rounded-full animate-ping';
+        statusText.textContent = 'Streaming to Sheets';
+        statusText.className = 'text-green-400 font-semibold';
+
+        // Optimized frame capture resolution (480x360 for fast Google Apps Script writes)
+        frameCanvas.width = 480;
+        frameCanvas.height = 360;
+        const ctx = frameCanvas.getContext('2d');
+
+        // Loop: capture and send to Google Sheet
+        streamInterval = setInterval(async () => {
+          if (isBroadcastingBusy) return;
+          isBroadcastingBusy = true;
+
+          ctx.drawImage(webcam, 0, 0, frameCanvas.width, frameCanvas.height);
+          const base64Data = frameCanvas.toDataURL('image/jpeg', 0.5);
+
+          try {
+            await fetch(url, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ image: base64Data })
+            });
+
+            updateFps();
+          } catch (e) {
+            console.error('Push error:', e);
+          } finally {
+            isBroadcastingBusy = false;
+          }
+        }, 600); // Sends every 600ms to stay within Google Apps Script quotas
+
+      } catch (err) {
+        alert('Webcam permission error: ' + err.message);
       }
     });
+
+    // --- VIEWER (Device 2) ---
+    btnStartWatching.addEventListener('click', () => {
+      const url = getBackendUrl();
+      if (!url) return;
+
+      webcam.classList.add('hidden');
+      remoteDisplay.classList.remove('hidden');
+      idleScreen.classList.add('hidden');
+      streamOverlay.classList.remove('hidden');
+      stopControl.classList.remove('hidden');
+
+      roleBadge.textContent = 'Viewer';
+      roleBadge.className = 'text-xs font-mono uppercase bg-emerald-950 border border-emerald-700 px-2.5 py-1 rounded text-emerald-300';
+      statusDot.className = 'h-3 w-3 bg-green-500 rounded-full animate-pulse';
+      statusText.textContent = 'Polling Google Sheet';
+      statusText.className = 'text-emerald-400 font-semibold';
+
+      let isFetching = false;
+
+      // Poll Google Sheet backend for new frames
+      streamInterval = setInterval(async () => {
+        if (isFetching) return;
+        isFetching = true;
+
+        try {
+          const res = await fetch(`${url}?t=${Date.now()}`);
+          const data = await res.json();
+          if (data && data.image) {
+            remoteDisplay.src = data.image;
+            updateFps();
+          }
+        } catch (e) {
+          console.error('Fetch error:', e);
+        } finally {
+          isFetching = false;
+        }
+      }, 700); // Polls every 700ms
+    });
+
+    // --- STOP STREAM ---
+    btnStop.addEventListener('click', () => {
+      if (streamInterval) clearInterval(streamInterval);
+      if (localMediaStream) {
+        localMediaStream.getTracks().forEach(t => t.stop());
+      }
+      location.reload();
+    });
+
+    // Helper: calculate actual frames rendered per second
+    function updateFps() {
+      frameCount++;
+      const now = Date.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsCounter.textContent = `${frameCount} FPS`;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+    }
   </script>
 </body>
 </html>

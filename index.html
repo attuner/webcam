@@ -3,12 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>P2P Live Webcam Broadcast</title>
-  <!-- Tailwind CSS -->
+  <title>Cross-Network Live Webcam</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-  <!-- PeerJS Client Library -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     .mirror { transform: scaleX(-1); }
@@ -17,97 +14,70 @@
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-between p-4 selection:bg-indigo-500 selection:text-white">
 
   <!-- Header -->
-  <header class="w-full max-w-5xl flex flex-wrap items-center justify-between py-4 border-b border-slate-800 gap-4">
+  <header class="w-full max-w-4xl flex items-center justify-between py-4 border-b border-slate-800">
     <div class="flex items-center space-x-3">
-      <div id="liveDot" class="h-3 w-3 bg-slate-600 rounded-full"></div>
-      <h1 class="text-xl font-bold tracking-tight flex items-center gap-2">
-        <span>LiveCam</span>
-        <span id="roleBadge" class="text-xs font-mono uppercase bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-slate-400">Idle</span>
-      </h1>
+      <div id="statusDot" class="h-3 w-3 bg-slate-600 rounded-full"></div>
+      <h1 class="text-xl font-bold tracking-tight">CrossNet <span class="text-xs font-mono text-indigo-400">P2P RELAY</span></h1>
     </div>
-    
-    <div class="flex items-center gap-3">
-      <span id="connectionCount" class="hidden text-xs font-mono bg-indigo-950/60 border border-indigo-800/80 text-indigo-300 px-2.5 py-1 rounded-full">
-        <i class="fa-solid fa-users text-xs mr-1"></i> Viewers: <b id="viewerNum">0</b>
-      </span>
-      <button id="snapBtn" class="hidden text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-xl transition flex items-center gap-2">
-        <i class="fa-solid fa-camera"></i> Snapshot
-      </button>
-    </div>
+    <span id="roleBadge" class="text-xs font-mono uppercase bg-slate-800 border border-slate-700 px-2.5 py-1 rounded text-slate-400">Idle</span>
   </header>
 
-  <!-- Diagnostic Alert Banner -->
-  <div id="diagBanner" class="w-full max-w-5xl mt-3 hidden rounded-xl p-3 text-xs flex items-center justify-between border">
-    <div class="flex items-center gap-2">
-      <i id="diagIcon" class="fa-solid"></i>
-      <span id="diagText">System ready.</span>
-    </div>
-    <button id="retryDiagBtn" class="underline hover:text-white ml-2 text-xs font-mono">Re-check</button>
-  </div>
-
   <!-- Video Viewport -->
-  <main class="w-full max-w-5xl my-auto flex flex-col items-center">
-    <div class="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center group">
+  <main class="w-full max-w-4xl my-auto flex flex-col items-center">
+    <div class="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center">
       
-      <!-- Video Element -->
-      <video id="videoDisplay" autoplay playsinline class="w-full h-full object-cover transition duration-300"></video>
+      <video id="videoDisplay" autoplay playsinline class="w-full h-full object-cover"></video>
       <canvas id="hiddenCanvas" class="hidden"></canvas>
 
-      <!-- Idle Screen -->
+      <!-- Idle Placeholder -->
       <div id="idleScreen" class="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-slate-950/90 backdrop-blur-sm z-10">
-        <div class="h-16 w-16 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center mb-4 text-indigo-400 text-2xl shadow-inner">
-          <i class="fa-solid fa-video"></i>
-        </div>
-        <h2 class="text-lg font-bold text-slate-200">No Active Stream</h2>
-        <p class="text-sm text-slate-400 max-w-md mt-1">Start broadcasting from this device or join an existing room via a shared link.</p>
+        <i class="fa-solid fa-satellite-dish text-4xl text-indigo-400 mb-3"></i>
+        <h2 class="text-lg font-bold text-slate-200">Cross-Network Streaming</h2>
+        <p class="text-xs text-slate-400 max-w-sm mt-1">Direct TURN relay enabled for mobile-to-Wi-Fi and cellular connections.</p>
       </div>
 
-      <!-- Quick Utility Overlay -->
-      <div class="absolute top-4 right-4 flex space-x-2 z-20">
-        <button id="flipBtn" title="Flip Mirror" class="hidden bg-black/60 hover:bg-black/80 backdrop-blur-md p-2 rounded-full border border-white/20 text-white transition">
-          <i class="fa-solid fa-arrows-left-right text-sm"></i>
-        </button>
-        <button id="unmuteBtn" title="Click to Unmute" class="hidden bg-emerald-600 hover:bg-emerald-500 backdrop-blur-md px-3 py-1 rounded-full border border-white/20 text-white text-xs font-semibold flex items-center gap-1 transition">
-          <i class="fa-solid fa-volume-high"></i> Click to Play Audio
+      <!-- Controls & Status Overlays -->
+      <div id="overlayBar" class="hidden absolute top-3 right-3 flex gap-2 z-20">
+        <button id="unmuteBtn" class="hidden bg-emerald-600 hover:bg-emerald-500 px-3 py-1 rounded-full text-xs font-semibold shadow">
+          <i class="fa-solid fa-volume-high"></i> Play Audio
         </button>
       </div>
 
-      <!-- Stream Status Overlay -->
-      <div id="streamInfoOverlay" class="hidden absolute bottom-4 left-4 text-xs font-mono text-white/80 bg-black/60 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10 z-20">
-        Status: <span id="statusLabel" class="text-yellow-400">Initializing...</span>
+      <div id="statusOverlay" class="hidden absolute bottom-3 left-3 text-xs font-mono bg-black/70 px-3 py-1.5 rounded-lg border border-white/10 z-20">
+        Status: <span id="statusLabel" class="text-yellow-400 font-semibold">Connecting...</span>
       </div>
     </div>
 
-    <!-- Action & Config Panel -->
-    <div class="w-full mt-4 bg-slate-900/80 backdrop-blur-md border border-slate-800 p-5 rounded-2xl shadow-lg">
+    <!-- Controls Container -->
+    <div class="w-full mt-4 bg-slate-900 border border-slate-800 p-5 rounded-2xl">
       
-      <!-- Selection Modes -->
-      <div id="modeSelector" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- Selection Buttons -->
+      <div id="setupGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
         
-        <!-- Option A: Broadcaster -->
-        <div class="p-5 bg-slate-800/50 border border-slate-700/60 rounded-xl flex flex-col justify-between">
+        <!-- Host -->
+        <div class="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl flex flex-col justify-between">
           <div>
-            <h3 class="font-semibold text-white flex items-center gap-2">
-              <i class="fa-solid fa-tower-broadcast text-indigo-400"></i> Broadcast From This Device
-            </h3>
-            <p class="text-xs text-slate-400 mt-1">Turn this webcam into a live serverless feed and share the link with others.</p>
+            <h2 class="font-semibold text-white flex items-center gap-2">
+              <i class="fa-solid fa-video text-indigo-400"></i> Broadcast (Device 1)
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Stream camera feed to any device outside this network.</p>
           </div>
-          <button id="startHostBtn" class="mt-4 w-full bg-indigo-600 hover:bg-indigo-500 font-medium text-sm py-2.5 rounded-lg transition shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2">
-            <i class="fa-solid fa-circle-play"></i> Start Broadcasting
+          <button id="btnStartHost" class="mt-4 bg-indigo-600 hover:bg-indigo-500 text-sm font-medium py-2.5 rounded-lg transition shadow-lg shadow-indigo-600/30">
+            Start Broadcasting
           </button>
         </div>
 
-        <!-- Option B: Viewer -->
-        <div class="p-5 bg-slate-800/50 border border-slate-700/60 rounded-xl flex flex-col justify-between">
+        <!-- Viewer -->
+        <div class="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl flex flex-col justify-between">
           <div>
-            <h3 class="font-semibold text-white flex items-center gap-2">
-              <i class="fa-solid fa-eye text-emerald-400"></i> Watch a Live Stream
-            </h3>
-            <p class="text-xs text-slate-400 mt-1">Enter a Room ID generated by the broadcaster to connect directly.</p>
+            <h2 class="font-semibold text-white flex items-center gap-2">
+              <i class="fa-solid fa-eye text-emerald-400"></i> Watch (Device 2)
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Join using the Room ID provided by Device 1.</p>
           </div>
           <div class="mt-4 flex gap-2">
-            <input id="joinRoomInput" type="text" placeholder="Paste Room ID here..." class="w-full bg-slate-950 border border-slate-700 px-3 py-2 rounded-lg text-sm outline-none focus:border-emerald-500 text-white font-mono" />
-            <button id="joinViewerBtn" class="bg-emerald-600 hover:bg-emerald-500 font-medium text-sm px-4 rounded-lg transition shadow-lg shadow-emerald-600/30 flex items-center gap-2">
+            <input id="inputRoomId" type="text" placeholder="Enter Host Room ID..." class="w-full bg-slate-950 border border-slate-700 px-3 py-2 rounded-lg text-xs font-mono outline-none focus:border-emerald-500" />
+            <button id="btnJoinViewer" class="bg-emerald-600 hover:bg-emerald-500 text-sm font-medium px-4 rounded-lg transition shadow-lg shadow-emerald-600/30">
               Join
             </button>
           </div>
@@ -115,328 +85,213 @@
 
       </div>
 
-      <!-- Live Broadcasting Card -->
-      <div id="hostActiveBox" class="hidden">
-        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 bg-indigo-950/40 border border-indigo-800/60 rounded-xl">
-          <div class="space-y-1">
-            <div class="text-xs font-mono text-indigo-300 font-semibold uppercase">Broadcasting Active</div>
-            <div class="text-sm text-slate-300">Share this Room ID or copy the direct link:</div>
-            <div class="flex items-center gap-2 mt-2">
-              <span id="roomIdDisplay" class="bg-slate-950 text-indigo-400 border border-indigo-900/80 px-3 py-1.5 rounded-lg font-mono text-sm tracking-wider font-semibold">---</span>
-              <button id="copyLinkBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs px-3 py-2 rounded-lg transition flex items-center gap-1.5">
-                <i class="fa-solid fa-copy"></i> Copy Share Link
-              </button>
-            </div>
+      <!-- Host Active Card -->
+      <div id="hostActivePanel" class="hidden p-4 bg-indigo-950/40 border border-indigo-800/70 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
+          <div class="text-xs font-mono text-indigo-300 font-bold uppercase">Live Broadcast Active</div>
+          <div class="text-xs text-slate-300 mt-0.5">Share this link to view from any network:</div>
+          <div class="flex items-center gap-2 mt-2">
+            <span id="displayRoomId" class="bg-slate-950 text-indigo-400 border border-indigo-900 px-3 py-1.5 rounded-lg font-mono text-sm font-semibold">---</span>
+            <button id="btnCopyLink" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+              <i class="fa-solid fa-copy"></i> Copy Link
+            </button>
           </div>
-          <button id="stopHostBtn" class="bg-red-600/80 hover:bg-red-600 text-white text-xs px-4 py-2.5 rounded-lg font-medium transition self-end md:self-center">
-            Stop Stream
-          </button>
         </div>
+        <button id="btnStopHost" class="bg-red-600 hover:bg-red-500 text-xs px-4 py-2 rounded-lg font-medium transition">
+          End Stream
+        </button>
       </div>
 
     </div>
   </main>
 
-  <!-- Toast Notification -->
-  <div id="toast" class="fixed bottom-6 right-6 bg-slate-800 border border-slate-700 text-white px-4 py-3 rounded-xl shadow-2xl transition-all duration-300 transform translate-y-20 opacity-0 flex items-center space-x-2 z-50">
-    <i id="toastIcon" class="fa-solid fa-circle-check text-green-400"></i>
-    <span id="toastMsg" class="text-sm">Notification</span>
-  </div>
-
   <script>
     const video = document.getElementById('videoDisplay');
     const idleScreen = document.getElementById('idleScreen');
-    const liveDot = document.getElementById('liveDot');
+    const statusDot = document.getElementById('statusDot');
     const roleBadge = document.getElementById('roleBadge');
-    const flipBtn = document.getElementById('flipBtn');
-    const snapBtn = document.getElementById('snapBtn');
-    const unmuteBtn = document.getElementById('unmuteBtn');
-    const hiddenCanvas = document.getElementById('hiddenCanvas');
-    const streamInfoOverlay = document.getElementById('streamInfoOverlay');
+    const statusOverlay = document.getElementById('statusOverlay');
     const statusLabel = document.getElementById('statusLabel');
-    const modeSelector = document.getElementById('modeSelector');
-    const hostActiveBox = document.getElementById('hostActiveBox');
-    const roomIdDisplay = document.getElementById('roomIdDisplay');
-    const copyLinkBtn = document.getElementById('copyLinkBtn');
-    const startHostBtn = document.getElementById('startHostBtn');
-    const stopHostBtn = document.getElementById('stopHostBtn');
-    const joinRoomInput = document.getElementById('joinRoomInput');
-    const joinViewerBtn = document.getElementById('joinViewerBtn');
-    const connectionCount = document.getElementById('connectionCount');
-    const viewerNum = document.getElementById('viewerNum');
-
-    const diagBanner = document.getElementById('diagBanner');
-    const diagIcon = document.getElementById('diagIcon');
-    const diagText = document.getElementById('diagText');
-    const retryDiagBtn = document.getElementById('retryDiagBtn');
+    const overlayBar = document.getElementById('overlayBar');
+    const unmuteBtn = document.getElementById('unmuteBtn');
+    const setupGrid = document.getElementById('setupGrid');
+    const hostActivePanel = document.getElementById('hostActivePanel');
+    const displayRoomId = document.getElementById('displayRoomId');
+    const btnStartHost = document.getElementById('btnStartHost');
+    const btnStopHost = document.getElementById('btnStopHost');
+    const btnCopyLink = document.getElementById('btnCopyLink');
+    const inputRoomId = document.getElementById('inputRoomId');
+    const btnJoinViewer = document.getElementById('btnJoinViewer');
 
     let peer = null;
     let localStream = null;
-    let connectedViewers = new Set();
-    let isMirrored = false;
 
-    // Configured with multiple public STUN servers
-    const peerConfig = {
+    // Standard WebRTC Configuration with OpenRelay TURN servers for NAT traversal
+    const rtcConfiguration = {
       debug: 1,
       config: {
         iceServers: [
+          // STUN Servers
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' }
+          // Free Public TURN Relay from OpenRelay (Metered)
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
         ]
       }
     };
 
-    function showToast(message, isError = false) {
-      const toast = document.getElementById('toast');
-      const toastMsg = document.getElementById('toastMsg');
-      const toastIcon = document.getElementById('toastIcon');
-
-      toastMsg.textContent = message;
-      toastIcon.className = isError ? "fa-solid fa-triangle-exclamation text-red-400" : "fa-solid fa-check text-green-400";
-      toast.classList.remove('opacity-0', 'translate-y-20');
-
-      setTimeout(() => {
-        toast.classList.add('opacity-0', 'translate-y-20');
-      }, 4000);
-    }
-
-    // Diagnostics & Environment Check
-    async function checkEnvironment() {
-      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-        renderDiag(false, "HTTPS Required: WebRTC and Cameras require HTTPS. Deploy to GitHub Pages or use HTTPS.");
-        return false;
-      }
+    // --- 1. BROADCASTER LOGIC (Device 1) ---
+    btnStartHost.addEventListener('click', async () => {
       try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoInputs = devices.filter(d => d.kind === 'videoinput');
-        if (videoInputs.length === 0) {
-          renderDiag(false, "No webcam hardware detected. Connect a camera if you plan to broadcast.");
-          return true;
-        }
-        renderDiag(true, `Hardware detected: ${videoInputs.length} camera(s) available.`);
-        return true;
-      } catch (err) {
-        renderDiag(true, "Ready to join as Viewer. (Broadcasters will need to allow camera access).");
-        return true;
-      }
-    }
-
-    function renderDiag(isOk, text) {
-      diagBanner.classList.remove('hidden');
-      diagBanner.className = isOk 
-        ? "w-full max-w-5xl mt-3 rounded-xl p-3 text-xs flex items-center justify-between border bg-emerald-950/40 border-emerald-800/80 text-emerald-300"
-        : "w-full max-w-5xl mt-3 rounded-xl p-3 text-xs flex items-center justify-between border bg-amber-950/50 border-amber-800/80 text-amber-300";
-      diagIcon.className = isOk ? "fa-solid fa-circle-check text-emerald-400" : "fa-solid fa-triangle-exclamation text-amber-400";
-      diagText.textContent = text;
-    }
-
-    retryDiagBtn.addEventListener('click', checkEnvironment);
-
-    // --- 1. BROADCASTER / HOST LOGIC ---
-    startHostBtn.addEventListener('click', async () => {
-      try {
-        try {
-          localStream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-            audio: true
-          });
-        } catch (e) {
-          console.warn("Audio unavailable or denied, falling back to video-only:", e);
-          localStream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-            audio: false
-          });
-        }
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+          audio: true
+        }).catch(async () => {
+          // Video-only fallback if mic is blocked or missing
+          return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        });
 
         video.srcObject = localStream;
-        video.muted = true; 
-        isMirrored = true;
+        video.muted = true; // Host mutes locally
         video.classList.add('mirror');
-        flipBtn.classList.remove('hidden');
-        snapBtn.classList.remove('hidden');
         idleScreen.classList.add('hidden');
-        streamInfoOverlay.classList.remove('hidden');
+        statusOverlay.classList.remove('hidden');
 
-        peer = new Peer(peerConfig);
+        peer = new Peer(rtcConfiguration);
 
         peer.on('open', (id) => {
           roleBadge.textContent = "Host";
-          roleBadge.className = "text-xs font-mono uppercase bg-indigo-900 border border-indigo-700 px-2 py-0.5 rounded text-indigo-300";
-          liveDot.className = "h-3 w-3 bg-red-500 rounded-full animate-ping";
-          statusLabel.textContent = "Broadcasting Live";
-          statusLabel.className = "text-green-400";
-          connectionCount.classList.remove('hidden');
+          roleBadge.className = "text-xs font-mono uppercase bg-indigo-900 border border-indigo-700 px-2.5 py-1 rounded text-indigo-300";
+          statusDot.className = "h-3 w-3 bg-red-500 rounded-full animate-ping";
+          statusLabel.textContent = "Broadcasting (Awaiting Viewers)";
+          statusLabel.className = "text-green-400 font-semibold";
 
-          modeSelector.classList.add('hidden');
-          hostActiveBox.classList.remove('hidden');
-          roomIdDisplay.textContent = id;
-          showToast("Ready! Share your Room link.");
+          setupGrid.classList.add('hidden');
+          hostActivePanel.classList.remove('hidden');
+          displayRoomId.textContent = id;
         });
 
-        // Listen for connection requests from viewers via DataChannel
+        // Answer incoming data connections from viewers
         peer.on('connection', (conn) => {
           conn.on('data', (data) => {
-            if (data && data.type === 'request-stream') {
-              // Host calls viewer directly with the real localStream
-              const outgoingCall = peer.call(conn.peer, localStream);
-              connectedViewers.add(conn.peer);
-              viewerNum.textContent = connectedViewers.size;
-
-              if (outgoingCall) {
-                outgoingCall.on('close', () => {
-                  connectedViewers.delete(conn.peer);
-                  viewerNum.textContent = connectedViewers.size;
-                });
-              }
+            if (data === 'request-stream') {
+              // Call the viewer directly with the real media tracks
+              peer.call(conn.peer, localStream);
+              statusLabel.textContent = "Streaming to Viewer";
             }
           });
-
-          conn.on('close', () => {
-            connectedViewers.delete(conn.peer);
-            viewerNum.textContent = connectedViewers.size;
-          });
         });
 
-        peer.on('error', (err) => {
-          showToast(`Host Peer error: ${err.message}`, true);
-        });
+        peer.on('error', (err) => console.error("PeerJS Host Error:", err));
 
       } catch (err) {
-        showToast(`Camera Access Error: ${err.message}`, true);
+        alert("Camera error: " + err.message);
       }
     });
 
-    copyLinkBtn.addEventListener('click', () => {
-      const id = roomIdDisplay.textContent;
-      const shareUrl = `${window.location.origin}${window.location.pathname}?room=${id}`;
-      navigator.clipboard.writeText(shareUrl).then(() => {
-        showToast("Shareable link copied to clipboard!");
-      });
+    btnCopyLink.addEventListener('click', () => {
+      const url = `${window.location.origin}${window.location.pathname}?room=${displayRoomId.textContent}`;
+      navigator.clipboard.writeText(url).then(() => alert("Link copied! Open on Device 2."));
     });
 
-    stopHostBtn.addEventListener('click', () => {
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-      }
+    btnStopHost.addEventListener('click', () => {
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
       if (peer) peer.destroy();
       location.href = window.location.pathname;
     });
 
-    // --- 2. VIEWER LOGIC (Two-step Data Channel handshake) ---
-    function joinRoom(hostId) {
-      if (!hostId) {
-        showToast("Please enter a valid Room ID.", true);
-        return;
-      }
+    // --- 2. VIEWER LOGIC (Device 2) ---
+    function connectViewer(hostId) {
+      if (!hostId) return;
 
       roleBadge.textContent = "Viewer";
-      roleBadge.className = "text-xs font-mono uppercase bg-emerald-950 border border-emerald-700 px-2 py-0.5 rounded text-emerald-300";
-      statusLabel.textContent = "Negotiating connection...";
-      statusLabel.className = "text-yellow-400";
-      streamInfoOverlay.classList.remove('hidden');
-      modeSelector.classList.add('hidden');
+      roleBadge.className = "text-xs font-mono uppercase bg-emerald-950 border border-emerald-700 px-2.5 py-1 rounded text-emerald-300";
+      statusOverlay.classList.remove('hidden');
+      statusLabel.textContent = "Negotiating Relay (TURN)...";
+      statusLabel.className = "text-yellow-400 font-semibold";
+      setupGrid.classList.add('hidden');
 
-      peer = new Peer(peerConfig);
+      peer = new Peer(rtcConfiguration);
 
-      peer.on('open', (viewerId) => {
+      peer.on('open', () => {
         statusLabel.textContent = "Connecting to Host...";
 
-        // Step 1: Establish data channel with the broadcaster
+        // Step 1: Establish DataChannel to trigger the host
         const conn = peer.connect(hostId, { reliable: true });
 
         conn.on('open', () => {
-          statusLabel.textContent = "Requesting live feed...";
-          // Step 2: Request the broadcaster to push media stream
-          conn.send({ type: 'request-stream' });
+          statusLabel.textContent = "Requesting Stream...";
+          conn.send('request-stream');
         });
 
         conn.on('error', (err) => {
-          showToast("Failed to connect to Host ID: " + err, true);
-          statusLabel.textContent = "Host Unreachable";
-          statusLabel.className = "text-red-400";
+          statusLabel.textContent = "Failed to connect to host ID.";
+          statusLabel.className = "text-red-400 font-semibold";
         });
 
-        // Step 3: Receive incoming video call from the host
+        // Step 2: Answer incoming media call with tracks
         peer.on('call', (incomingCall) => {
-          // Answer without sending local stream
-          incomingCall.answer();
+          incomingCall.answer(); // Viewer sends no tracks
 
           incomingCall.on('stream', (remoteStream) => {
             video.srcObject = remoteStream;
-            video.classList.remove('mirror');
             idleScreen.classList.add('hidden');
-            snapBtn.classList.remove('hidden');
-            liveDot.className = "h-3 w-3 bg-green-500 rounded-full animate-pulse";
-            statusLabel.textContent = "Connected & Streaming";
-            statusLabel.className = "text-green-400";
-            showToast("Stream established!");
+            overlayBar.classList.remove('hidden');
+            statusDot.className = "h-3 w-3 bg-green-500 rounded-full animate-pulse";
+            statusLabel.textContent = "Live Connected";
+            statusLabel.className = "text-green-400 font-semibold";
 
-            // Attempt autoplay; handle browser audio restrictions
             video.play().catch(() => {
+              // Unmute prompt for browser autoplay policy
               video.muted = true;
               video.play();
               unmuteBtn.classList.remove('hidden');
-              showToast("Click 'Play Audio' to hear the sound.");
             });
           });
 
           incomingCall.on('close', () => {
-            showToast("Host ended the stream.", true);
-            setTimeout(() => location.reload(), 2000);
+            statusLabel.textContent = "Host ended stream.";
+            statusLabel.className = "text-red-400 font-semibold";
           });
         });
       });
 
       peer.on('error', (err) => {
-        showToast(`Viewer error: ${err.message}`, true);
-        statusLabel.textContent = "Connection Error";
-        statusLabel.className = "text-red-400";
+        statusLabel.textContent = "Error: " + err.type;
+        statusLabel.className = "text-red-400 font-semibold";
       });
     }
 
-    joinViewerBtn.addEventListener('click', () => {
-      joinRoom(joinRoomInput.value.trim());
+    btnJoinViewer.addEventListener('click', () => {
+      connectViewer(inputRoomId.value.trim());
     });
 
     unmuteBtn.addEventListener('click', () => {
       video.muted = false;
+      video.play();
       unmuteBtn.classList.add('hidden');
     });
 
-    // --- 3. UTILITIES ---
-    flipBtn.addEventListener('click', () => {
-      isMirrored = !isMirrored;
-      video.classList.toggle('mirror', isMirrored);
-    });
-
-    snapBtn.addEventListener('click', () => {
-      if (!video.videoWidth) return;
-      hiddenCanvas.width = video.videoWidth;
-      hiddenCanvas.height = video.videoHeight;
-      const ctx = hiddenCanvas.getContext('2d');
-
-      if (isMirrored) {
-        ctx.translate(hiddenCanvas.width, 0);
-        ctx.scale(-1, 1);
-      }
-
-      ctx.drawImage(video, 0, 0, hiddenCanvas.width, hiddenCanvas.height);
-      const link = document.createElement('a');
-      link.download = `webcam-snapshot-${Date.now()}.jpg`;
-      link.href = hiddenCanvas.toDataURL('image/jpeg', 0.95);
-      link.click();
-      showToast("Snapshot downloaded!");
-    });
-
-    window.addEventListener('DOMContentLoaded', async () => {
-      await checkEnvironment();
-      const urlParams = new URLSearchParams(window.location.search);
-      const roomParam = urlParams.get('room');
-      if (roomParam) {
-        joinRoomInput.value = roomParam;
-        joinRoom(roomParam);
+    // Auto-detect Room ID from URL
+    window.addEventListener('DOMContentLoaded', () => {
+      const room = new URLSearchParams(window.location.search).get('room');
+      if (room) {
+        inputRoomId.value = room;
+        connectViewer(room);
       }
     });
   </script>

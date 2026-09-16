@@ -3,333 +3,168 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Serverless Modern Live Webcam</title>
-  <!-- Tailwind CSS CDN -->
+  <title>P2P Live Webcam Broadcast</title>
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <!-- PeerJS Client Library -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     .mirror { transform: scaleX(-1); }
-    .filter-grayscale { filter: grayscale(100%); }
-    .filter-sepia { filter: sepia(80%); }
-    .filter-contrast { filter: contrast(160%) brightness(110%); }
-    .filter-night { filter: brightness(140%) contrast(120%) hue-rotate(90deg); }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-between p-4">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-between p-4 selection:bg-indigo-500 selection:text-white">
 
-  <!-- Header -->
-  <header class="w-full max-w-5xl flex items-center justify-between py-4 border-b border-slate-800">
+  <!-- Top Navigation -->
+  <header class="w-full max-w-5xl flex flex-wrap items-center justify-between py-4 border-b border-slate-800 gap-4">
     <div class="flex items-center space-x-3">
-      <div class="h-3 w-3 bg-red-500 rounded-full animate-ping"></div>
-      <h1 class="text-xl font-bold tracking-wide">LiveCam <span class="text-xs text-indigo-400 font-mono">SERVERLESS</span></h1>
+      <div id="liveDot" class="h-3 w-3 bg-slate-600 rounded-full"></div>
+      <h1 class="text-xl font-bold tracking-tight flex items-center gap-2">
+        <span>LiveCam</span>
+        <span id="roleBadge" class="text-xs font-mono uppercase bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-slate-400">Idle</span>
+      </h1>
     </div>
-    <!-- Google Sync Status Modal Trigger -->
-    <button id="openSettings" class="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-2 transition">
-      <i class="fa-solid fa-cloud"></i>
-      <span>Google Cloud Link</span>
-    </button>
+    
+    <div class="flex items-center gap-3">
+      <span id="connectionCount" class="hidden text-xs font-mono bg-indigo-950/60 border border-indigo-800/80 text-indigo-300 px-2.5 py-1 rounded-full">
+        <i class="fa-solid fa-users text-xs mr-1"></i> Viewers: <b id="viewerNum">0</b>
+      </span>
+      <button id="snapBtn" class="hidden text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-xl transition flex items-center gap-2">
+        <i class="fa-solid fa-camera"></i> Snapshot
+      </button>
+    </div>
   </header>
 
-  <!-- Main Viewport -->
+  <!-- Video Viewport -->
   <main class="w-full max-w-5xl my-auto flex flex-col items-center">
-    <!-- Camera Viewport Container -->
     <div class="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center group">
       
-      <!-- Video Element -->
-      <video id="webcam" autoplay playsinline class="w-full h-full object-cover mirror transition duration-200"></video>
-      <canvas id="snapshotCanvas" class="hidden"></canvas>
+      <!-- Video Element (used by both broadcaster and viewer) -->
+      <video id="videoDisplay" autoplay playsinline class="w-full h-full object-cover transition duration-300"></video>
+      <canvas id="hiddenCanvas" class="hidden"></canvas>
 
-      <!-- Recording Badge -->
-      <div id="recordingBadge" class="hidden absolute top-4 left-4 bg-red-600/90 text-white text-xs px-3 py-1.5 rounded-full font-semibold flex items-center space-x-2 backdrop-blur-sm animate-pulse">
-        <span class="h-2 w-2 bg-white rounded-full"></span>
-        <span id="recordTimer">00:00</span>
+      <!-- Idle Placeholder Screen -->
+      <div id="idleScreen" class="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-slate-950/90 backdrop-blur-sm z-10">
+        <div class="h-16 w-16 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center mb-4 text-indigo-400 text-2xl shadow-inner">
+          <i class="fa-solid fa-video"></i>
+        </div>
+        <h2 class="text-lg font-bold text-slate-200">No Active Stream</h2>
+        <p class="text-sm text-slate-400 max-w-md mt-1">Start broadcasting with your device's camera or join an active room via a shared link.</p>
       </div>
 
-      <!-- Quick Actions (Top Right) -->
-      <div class="absolute top-4 right-4 flex space-x-2 opacity-80 group-hover:opacity-100 transition">
-        <button id="flipBtn" title="Flip Mirror" class="bg-black/60 hover:bg-black/80 backdrop-blur-md p-2 rounded-full border border-white/20 text-white transition">
+      <!-- Quick Utility Overlay (Top Right) -->
+      <div class="absolute top-4 right-4 flex space-x-2 z-20">
+        <button id="flipBtn" title="Flip Mirror" class="hidden bg-black/60 hover:bg-black/80 backdrop-blur-md p-2 rounded-full border border-white/20 text-white transition">
           <i class="fa-solid fa-arrows-left-right text-sm"></i>
         </button>
       </div>
 
-      <!-- Live Stream Info Overlay -->
-      <div id="statusOverlay" class="absolute bottom-4 left-4 text-xs font-mono text-white/70 bg-black/40 px-2 py-1 rounded backdrop-blur-sm">
-        Resolution: <span id="resText">--</span>
+      <!-- Stream Status Overlay -->
+      <div id="streamInfoOverlay" class="hidden absolute bottom-4 left-4 text-xs font-mono text-white/80 bg-black/60 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10 z-20">
+        Status: <span id="statusLabel" class="text-green-400">Connected</span>
       </div>
     </div>
 
-    <!-- Controls Panel -->
-    <div class="w-full mt-4 bg-slate-900/80 backdrop-blur-md border border-slate-800 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+    <!-- Interactive Dashboard / Action Panel -->
+    <div class="w-full mt-4 bg-slate-900/80 backdrop-blur-md border border-slate-800 p-5 rounded-2xl shadow-lg">
       
-      <!-- Device & Filter Selectors -->
-      <div class="flex flex-wrap items-center gap-3">
-        <select id="cameraSelect" class="bg-slate-800 text-sm border border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-indigo-500">
-          <option value="">Detecting cameras...</option>
-        </select>
+      <!-- Choose Mode Tabs -->
+      <div id="modeSelector" class="grid grid-cols-1 md:grid-cols-2 gap-4">
         
-        <select id="filterSelect" class="bg-slate-800 text-sm border border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-indigo-500">
-          <option value="none">Filter: Normal</option>
-          <option value="filter-grayscale">Black & White</option>
-          <option value="filter-sepia">Sepia Vintage</option>
-          <option value="filter-contrast">High Contrast</option>
-          <option value="filter-night">Night Vision</option>
-        </select>
+        <!-- Option A: Host a Webcam -->
+        <div class="p-5 bg-slate-800/50 border border-slate-700/60 rounded-xl flex flex-col justify-between">
+          <div>
+            <h3 class="font-semibold text-white flex items-center gap-2">
+              <i class="fa-solid fa-tower-broadcast text-indigo-400"></i> Broadcast From This Device
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">Turn this webcam into a live serverless feed and share the link with others.</p>
+          </div>
+          <button id="startHostBtn" class="mt-4 w-full bg-indigo-600 hover:bg-indigo-500 font-medium text-sm py-2.5 rounded-lg transition shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2">
+            <i class="fa-solid fa-circle-play"></i> Start Broadcasting
+          </button>
+        </div>
+
+        <!-- Option B: View an Existing Webcam -->
+        <div class="p-5 bg-slate-800/50 border border-slate-700/60 rounded-xl flex flex-col justify-between">
+          <div>
+            <h3 class="font-semibold text-white flex items-center gap-2">
+              <i class="fa-solid fa-eye text-emerald-400"></i> Watch a Live Stream
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">Enter a Room ID generated by the broadcaster to connect directly.</p>
+          </div>
+          <div class="mt-4 flex gap-2">
+            <input id="joinRoomInput" type="text" placeholder="Paste Room ID here..." class="w-full bg-slate-950 border border-slate-700 px-3 py-2 rounded-lg text-sm outline-none focus:border-emerald-500 text-white font-mono" />
+            <button id="joinViewerBtn" class="bg-emerald-600 hover:bg-emerald-500 font-medium text-sm px-4 rounded-lg transition shadow-lg shadow-emerald-600/30 flex items-center gap-2">
+              Join
+            </button>
+          </div>
+        </div>
+
       </div>
 
-      <!-- Action Buttons -->
-      <div class="flex items-center space-x-3">
-        <!-- Snapshot Button -->
-        <button id="snapBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2 rounded-xl flex items-center space-x-2 shadow-lg shadow-indigo-600/30 transition active:scale-95">
-          <i class="fa-solid fa-camera"></i>
-          <span>Snapshot</span>
-        </button>
-
-        <!-- Record Video Button -->
-        <button id="recordBtn" class="bg-red-600 hover:bg-red-500 text-white font-medium px-4 py-2 rounded-xl flex items-center space-x-2 shadow-lg shadow-red-600/30 transition active:scale-95">
-          <i class="fa-solid fa-circle-dot"></i>
-          <span id="recordBtnText">Record</span>
-        </button>
+      <!-- Live Broadcast Information Card (Visible only while hosting) -->
+      <div id="hostActiveBox" class="hidden">
+        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 bg-indigo-950/40 border border-indigo-800/60 rounded-xl">
+          <div class="space-y-1">
+            <div class="text-xs font-mono text-indigo-300 font-semibold uppercase">Broadcasting Active</div>
+            <div class="text-sm text-slate-300">Share this Room ID or copy the direct link:</div>
+            <div class="flex items-center gap-2 mt-2">
+              <span id="roomIdDisplay" class="bg-slate-950 text-indigo-400 border border-indigo-900/80 px-3 py-1.5 rounded-lg font-mono text-sm tracking-wider font-semibold">---</span>
+              <button id="copyLinkBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs px-3 py-2 rounded-lg transition flex items-center gap-1.5">
+                <i class="fa-solid fa-copy"></i> Copy Share Link
+              </button>
+            </div>
+          </div>
+          <button id="stopHostBtn" class="bg-red-600/80 hover:bg-red-600 text-white text-xs px-4 py-2.5 rounded-lg font-medium transition self-end md:self-center">
+            Stop Stream
+          </button>
+        </div>
       </div>
+
     </div>
   </main>
 
-  <!-- Google Apps Script Config Modal -->
-  <div id="settingsModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 relative">
-      <h2 class="text-lg font-bold mb-2">Connect Google Sheets & Drive</h2>
-      <p class="text-xs text-slate-400 mb-4">
-        Paste your deployed <strong>Google Apps Script Web App URL</strong> below. Snapshots will be uploaded directly to Drive and logged to Google Sheets.
-      </p>
-
-      <label class="text-xs font-semibold text-slate-300">Web App URL:</label>
-      <input id="scriptUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec" 
-             class="w-full mt-1 mb-4 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
-
-      <div class="flex justify-end space-x-3">
-        <button id="closeSettings" class="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
-        <button id="saveSettings" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm rounded-lg font-medium">Save & Enable</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Notification Toast -->
-  <div id="toast" class="fixed bottom-6 right-6 bg-slate-800 border border-slate-700 text-white px-4 py-3 rounded-xl shadow-2xl transition transform translate-y-20 opacity-0 flex items-center space-x-2">
-    <i id="toastIcon" class="fa-solid fa-check text-green-400"></i>
+  <!-- Toast Alert -->
+  <div id="toast" class="fixed bottom-6 right-6 bg-slate-800 border border-slate-700 text-white px-4 py-3 rounded-xl shadow-2xl transition-all duration-300 transform translate-y-20 opacity-0 flex items-center space-x-2 z-50">
+    <i id="toastIcon" class="fa-solid fa-circle-check text-green-400"></i>
     <span id="toastMsg" class="text-sm">Notification</span>
   </div>
 
-  <!-- Logic Script -->
   <script>
-    const video = document.getElementById('webcam');
-    const canvas = document.getElementById('snapshotCanvas');
-    const cameraSelect = document.getElementById('cameraSelect');
-    const filterSelect = document.getElementById('filterSelect');
-    const snapBtn = document.getElementById('snapBtn');
-    const recordBtn = document.getElementById('recordBtn');
-    const recordBtnText = document.getElementById('recordBtnText');
-    const recordingBadge = document.getElementById('recordingBadge');
-    const recordTimer = document.getElementById('recordTimer');
+    const video = document.getElementById('videoDisplay');
+    const idleScreen = document.getElementById('idleScreen');
+    const liveDot = document.getElementById('liveDot');
+    const roleBadge = document.getElementById('roleBadge');
     const flipBtn = document.getElementById('flipBtn');
-    const resText = document.getElementById('resText');
+    const snapBtn = document.getElementById('snapBtn');
+    const hiddenCanvas = document.getElementById('hiddenCanvas');
+    const streamInfoOverlay = document.getElementById('streamInfoOverlay');
+    const statusLabel = document.getElementById('statusLabel');
+    const modeSelector = document.getElementById('modeSelector');
+    const hostActiveBox = document.getElementById('hostActiveBox');
+    const roomIdDisplay = document.getElementById('roomIdDisplay');
+    const copyLinkBtn = document.getElementById('copyLinkBtn');
+    const startHostBtn = document.getElementById('startHostBtn');
+    const stopHostBtn = document.getElementById('stopHostBtn');
+    const joinRoomInput = document.getElementById('joinRoomInput');
+    const joinViewerBtn = document.getElementById('joinViewerBtn');
+    const connectionCount = document.getElementById('connectionCount');
+    const viewerNum = document.getElementById('viewerNum');
 
-    let currentStream = null;
-    let mediaRecorder = null;
-    let recordedChunks = [];
-    let recordInterval = null;
-    let secondsElapsed = 0;
-    let isMirrored = true;
+    let peer = null;
+    let localStream = null;
+    let activeCall = null;
+    let connectedViewers = new Set();
+    let isMirrored = false;
 
-    // 1. Initialize Cameras
-    async function getDevices() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(d => d.kind === 'videoinput');
-      cameraSelect.innerHTML = '';
-      videoDevices.forEach((device, index) => {
-        const option = document.createElement('option');
-        option.value = device.deviceId;
-        option.text = device.label || `Camera ${index + 1}`;
-        cameraSelect.appendChild(option);
-      });
-    }
-
-    async function startCamera(deviceId = null) {
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-      }
-
-      const constraints = {
-        video: {
-          deviceId: deviceId ? { exact: deviceId } : undefined,
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: true
-      };
-
-      try {
-        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-        video.srcObject = currentStream;
-        await getDevices(); // Re-populate labels with permissions granted
-
-        video.onloadedmetadata = () => {
-          resText.textContent = `${video.videoWidth}x${video.videoHeight}`;
-        };
-      } catch (err) {
-        showToast("Error accessing camera: " + err.message, true);
-      }
-    }
-
-    // Camera Switch Event
-    cameraSelect.addEventListener('change', () => {
-      startCamera(cameraSelect.value);
-    });
-
-    // 2. Filter & Orientation Handling
-    filterSelect.addEventListener('change', (e) => {
-      video.className = `w-full h-full object-cover transition duration-200 ${isMirrored ? 'mirror' : ''} ${e.target.value}`;
-    });
-
-    flipBtn.addEventListener('click', () => {
-      isMirrored = !isMirrored;
-      video.classList.toggle('mirror', isMirrored);
-    });
-
-    // 3. Snapshot & Google Cloud Upload
-    snapBtn.addEventListener('click', async () => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-
-      // Apply mirroring if active
-      if (isMirrored) {
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
-      }
-
-      // Draw active filter
-      ctx.filter = getComputedStyle(video).filter;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      const base64Data = canvas.toDataURL('image/jpeg', 0.9);
-      const scriptUrl = localStorage.getItem('gas_url');
-
-      if (scriptUrl) {
-        showToast("Uploading to Google Drive...");
-        sendToGoogleAppsScript(scriptUrl, base64Data);
-      } else {
-        // Fallback: Download file directly
-        const link = document.createElement('a');
-        link.download = `snapshot-${Date.now()}.jpg`;
-        link.href = base64Data;
-        link.click();
-        showToast("Saved snapshot locally!");
-      }
-    });
-
-    // 4. Video Recording (MediaRecorder API)
-    recordBtn.addEventListener('click', () => {
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        stopRecording();
-      } else {
-        startRecording();
-      }
-    });
-
-    function startRecording() {
-      recordedChunks = [];
-      const options = { mimeType: 'video/webm;codecs=vp9,opus' };
-      
-      try {
-        mediaRecorder = new MediaRecorder(currentStream, options);
-      } catch (e) {
-        mediaRecorder = new MediaRecorder(currentStream); // Default fallback
-      }
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) recordedChunks.push(event.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `recording-${Date.now()}.webm`;
-        a.click();
-        showToast("Video downloaded locally!");
-      };
-
-      mediaRecorder.start();
-      recordBtnText.textContent = "Stop Recording";
-      recordBtn.classList.replace('bg-red-600', 'bg-yellow-600');
-      recordingBadge.classList.remove('hidden');
-
-      // Timer
-      secondsElapsed = 0;
-      recordInterval = setInterval(() => {
-        secondsElapsed++;
-        const mins = String(Math.floor(secondsElapsed / 60)).padStart(2, '0');
-        const secs = String(secondsElapsed % 60).padStart(2, '0');
-        recordTimer.textContent = `${mins}:${secs}`;
-      }, 1000);
-    }
-
-    function stopRecording() {
-      mediaRecorder.stop();
-      clearInterval(recordInterval);
-      recordBtnText.textContent = "Record";
-      recordBtn.classList.replace('bg-yellow-600', 'bg-red-600');
-      recordingBadge.classList.add('hidden');
-    }
-
-    // 5. Send Image to Google Apps Script (Drive & Sheets)
-    async function sendToGoogleAppsScript(url, base64Image) {
-      try {
-        const payload = {
-          image: base64Image.split(',')[1],
-          mimeType: 'image/jpeg',
-          filename: `LiveCam-${Date.now()}.jpg`,
-          timestamp: new Date().toISOString()
-        };
-
-        // Note: Google Apps Script Web App requires mode: 'no-cors' from browsers or redirect handling
-        await fetch(url, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-
-        showToast("Logged to Sheets & saved to Drive!");
-      } catch (error) {
-        showToast("Upload failed: " + error.message, true);
-      }
-    }
-
-    // 6. Settings Modal & Local Storage
-    const modal = document.getElementById('settingsModal');
-    const openSettings = document.getElementById('openSettings');
-    const closeSettings = document.getElementById('closeSettings');
-    const saveSettings = document.getElementById('saveSettings');
-    const scriptInput = document.getElementById('scriptUrlInput');
-
-    openSettings.onclick = () => {
-      scriptInput.value = localStorage.getItem('gas_url') || '';
-      modal.classList.remove('hidden');
-    };
-    closeSettings.onclick = () => modal.classList.add('hidden');
-    saveSettings.onclick = () => {
-      localStorage.setItem('gas_url', scriptInput.value.trim());
-      modal.classList.add('hidden');
-      showToast("Google Settings saved!");
-    };
-
-    function showToast(msg, isError = false) {
+    // Toast Notification helper
+    function showToast(message, isError = false) {
       const toast = document.getElementById('toast');
       const toastMsg = document.getElementById('toastMsg');
       const toastIcon = document.getElementById('toastIcon');
 
-      toastMsg.textContent = msg;
+      toastMsg.textContent = message;
       toastIcon.className = isError ? "fa-solid fa-triangle-exclamation text-red-400" : "fa-solid fa-check text-green-400";
       toast.classList.remove('opacity-0', 'translate-y-20');
 
@@ -338,8 +173,167 @@
       }, 3500);
     }
 
-    // Auto-boot
-    window.addEventListener('DOMContentLoaded', () => startCamera());
+    // --- 1. BROADCASTER / HOST LOGIC ---
+    startHostBtn.addEventListener('click', async () => {
+      try {
+        // Request video and audio
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "user" },
+          audio: true
+        });
+
+        // Set local playback
+        video.srcObject = localStream;
+        video.muted = true; // Broadcaster mutes self to avoid feedback
+        isMirrored = true;
+        video.classList.add('mirror');
+        flipBtn.classList.remove('hidden');
+        snapBtn.classList.remove('hidden');
+        idleScreen.classList.add('hidden');
+        streamInfoOverlay.classList.remove('hidden');
+
+        // Connect to serverless PeerJS Cloud Relay
+        peer = new Peer();
+
+        peer.on('open', (id) => {
+          roleBadge.textContent = "Host";
+          roleBadge.className = "text-xs font-mono uppercase bg-indigo-900 border border-indigo-700 px-2 py-0.5 rounded text-indigo-300";
+          liveDot.className = "h-3 w-3 bg-red-500 rounded-full animate-ping";
+          statusLabel.textContent = "Broadcasting Live";
+          connectionCount.classList.remove('hidden');
+
+          modeSelector.classList.add('hidden');
+          hostActiveBox.classList.remove('hidden');
+          roomIdDisplay.textContent = id;
+          showToast("Broadcaster ready. Share your room ID!");
+        });
+
+        // Answer incoming calls from viewers
+        peer.on('call', (call) => {
+          // Send local stream to viewer
+          call.answer(localStream);
+          connectedViewers.add(call.peer);
+          viewerNum.textContent = connectedViewers.size;
+
+          call.on('close', () => {
+            connectedViewers.delete(call.peer);
+            viewerNum.textContent = connectedViewers.size;
+          });
+        });
+
+        peer.on('error', (err) => {
+          showToast(err.message, true);
+        });
+
+      } catch (err) {
+        showToast("Camera access failed: " + err.message, true);
+      }
+    });
+
+    // Copy Shareable URL
+    copyLinkBtn.addEventListener('click', () => {
+      const id = roomIdDisplay.textContent;
+      const shareUrl = `${window.location.origin}${window.location.pathname}?room=${id}`;
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        showToast("Shareable link copied to clipboard!");
+      });
+    });
+
+    // Stop Broadcaster
+    stopHostBtn.addEventListener('click', () => {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      if (peer) peer.destroy();
+      location.href = window.location.pathname; // Hard reset to idle
+    });
+
+    // --- 2. VIEWER LOGIC ---
+    function joinRoom(hostId) {
+      if (!hostId) {
+        showToast("Please enter a valid Room ID", true);
+        return;
+      }
+
+      roleBadge.textContent = "Viewer";
+      roleBadge.className = "text-xs font-mono uppercase bg-emerald-950 border border-emerald-700 px-2 py-0.5 rounded text-emerald-300";
+      statusLabel.textContent = "Connecting to Host...";
+      streamInfoOverlay.classList.remove('hidden');
+      modeSelector.classList.add('hidden');
+
+      peer = new Peer();
+
+      peer.on('open', () => {
+        // Call the host with an empty stream
+        const emptyStream = new MediaStream();
+        activeCall = peer.call(hostId, emptyStream);
+
+        activeCall.on('stream', (remoteStream) => {
+          video.srcObject = remoteStream;
+          video.muted = false; // Allow viewer to hear host audio
+          video.classList.remove('mirror');
+          idleScreen.classList.add('hidden');
+          snapBtn.classList.remove('hidden');
+          liveDot.className = "h-3 w-3 bg-green-500 rounded-full animate-pulse";
+          statusLabel.textContent = "Connected & Streaming";
+          showToast("Live stream connected!");
+        });
+
+        activeCall.on('close', () => {
+          showToast("Host disconnected the stream", true);
+          setTimeout(() => location.reload(), 2000);
+        });
+      });
+
+      peer.on('error', (err) => {
+        showToast("Connection failed: " + err.message, true);
+        statusLabel.textContent = "Connection Error";
+      });
+    }
+
+    joinViewerBtn.addEventListener('click', () => {
+      joinRoom(joinRoomInput.value.trim());
+    });
+
+    // --- 3. UTILITIES & TOOLS ---
+    // Flip/Mirror Video
+    flipBtn.addEventListener('click', () => {
+      isMirrored = !isMirrored;
+      video.classList.toggle('mirror', isMirrored);
+    });
+
+    // Download Snapshot Locally
+    snapBtn.addEventListener('click', () => {
+      if (!video.videoWidth) return;
+
+      hiddenCanvas.width = video.videoWidth;
+      hiddenCanvas.height = video.videoHeight;
+      const ctx = hiddenCanvas.getContext('2d');
+
+      if (isMirrored) {
+        ctx.translate(hiddenCanvas.width, 0);
+        ctx.scale(-1, 1);
+      }
+
+      ctx.drawImage(video, 0, 0, hiddenCanvas.width, hiddenCanvas.height);
+      const dataUrl = hiddenCanvas.toDataURL('image/jpeg', 0.95);
+
+      const link = document.createElement('a');
+      link.download = `live-snapshot-${Date.now()}.jpg`;
+      link.href = dataUrl;
+      link.click();
+      showToast("Snapshot saved!");
+    });
+
+    // Auto-detect Room ID from URL (e.g., ?room=abc-123)
+    window.addEventListener('DOMContentLoaded', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room');
+      if (roomParam) {
+        joinRoomInput.value = roomParam;
+        joinRoom(roomParam);
+      }
+    });
   </script>
 </body>
 </html>
